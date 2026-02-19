@@ -1,61 +1,39 @@
 use std::fs;
 use std::path::Path;
 
-/// Recursively copies the contents of `src` directory into `dst` directory.
-/// Creates `dst` if it doesn't exist. Overwrites existing files.
-pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
-    if !src.is_dir() {
-        return Err(format!("Source is not a directory: {}", src.display()));
-    }
-
-    fs::create_dir_all(dst).map_err(|e| format!("Failed to create dir {}: {}", dst.display(), e))?;
-
-    let entries = fs::read_dir(src)
-        .map_err(|e| format!("Failed to read dir {}: {}", src.display(), e))?;
-
-    for entry in entries {
-        let entry =
-            entry.map_err(|e| format!("Failed to read entry in {}: {}", src.display(), e))?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path).map_err(|e| {
-                format!(
-                    "Failed to copy {} -> {}: {}",
-                    src_path.display(),
-                    dst_path.display(),
-                    e
-                )
-            })?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Copies a file from `src` to `dst` only if `dst` does not already exist.
-/// Creates parent directories if needed.
-pub fn copy_file_if_not_exists(src: &Path, dst: &Path) -> Result<bool, String> {
+/// Installs a binary file from `src` to `dst`.
+/// - Creates parent directories if needed
+/// - Only copies if `dst` does not already exist (idempotent)
+/// - On Unix, sets executable permission (chmod +x)
+/// Returns true if the binary was installed, false if it already existed.
+pub fn install_binary(src: &Path, dst: &Path) -> Result<bool, String> {
     if dst.exists() {
         return Ok(false);
     }
 
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create parent dir {}: {}", parent.display(), e))?;
+            .map_err(|e| format!("Failed to create bin dir {}: {}", parent.display(), e))?;
     }
 
     fs::copy(src, dst).map_err(|e| {
         format!(
-            "Failed to copy {} -> {}: {}",
+            "Failed to install binary {} -> {}: {}",
             src.display(),
             dst.display(),
             e
         )
     })?;
+
+    // Set executable permission on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o755);
+        fs::set_permissions(dst, perms).map_err(|e| {
+            format!("Failed to set executable permission on {}: {}", dst.display(), e)
+        })?;
+    }
 
     Ok(true)
 }
@@ -66,62 +44,41 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_copy_dir_recursive_creates_dst_and_copies_files() {
-        let src_dir = TempDir::new().unwrap();
-        let dst_dir = TempDir::new().unwrap();
-        let dst_path = dst_dir.path().join("output");
+    fn test_install_binary_copies_and_sets_executable() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("my_bin");
+        let dst = tmp.path().join("installed/my_bin");
 
-        // Create source structure: file.txt, sub/nested.txt
-        fs::write(src_dir.path().join("file.txt"), "hello").unwrap();
-        fs::create_dir_all(src_dir.path().join("sub")).unwrap();
-        fs::write(src_dir.path().join("sub/nested.txt"), "world").unwrap();
+        fs::write(&src, "#!/bin/sh\necho hello").unwrap();
 
-        copy_dir_recursive(src_dir.path(), &dst_path).unwrap();
+        let installed = install_binary(&src, &dst).unwrap();
+        assert!(installed);
+        assert!(dst.exists());
 
-        assert!(dst_path.join("file.txt").exists());
-        assert_eq!(fs::read_to_string(dst_path.join("file.txt")).unwrap(), "hello");
-        assert!(dst_path.join("sub/nested.txt").exists());
-        assert_eq!(
-            fs::read_to_string(dst_path.join("sub/nested.txt")).unwrap(),
-            "world"
-        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = fs::metadata(&dst).unwrap().permissions();
+            assert_eq!(perms.mode() & 0o755, 0o755);
+        }
     }
 
     #[test]
-    fn test_copy_dir_recursive_fails_on_non_dir_source() {
+    fn test_install_binary_is_idempotent() {
         let tmp = TempDir::new().unwrap();
-        let file_path = tmp.path().join("file.txt");
-        fs::write(&file_path, "data").unwrap();
+        let src = tmp.path().join("my_bin");
+        let dst = tmp.path().join("my_bin_installed");
 
-        let result = copy_dir_recursive(&file_path, &tmp.path().join("out"));
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Source is not a directory"));
-    }
+        fs::write(&src, "binary v1").unwrap();
 
-    #[test]
-    fn test_copy_file_if_not_exists_copies_when_missing() {
-        let tmp = TempDir::new().unwrap();
-        let src = tmp.path().join("src.txt");
-        let dst = tmp.path().join("subdir/dst.txt");
+        let first = install_binary(&src, &dst).unwrap();
+        assert!(first);
 
-        fs::write(&src, "content").unwrap();
+        fs::write(&src, "binary v2").unwrap();
 
-        let copied = copy_file_if_not_exists(&src, &dst).unwrap();
-        assert!(copied);
-        assert_eq!(fs::read_to_string(&dst).unwrap(), "content");
-    }
+        let second = install_binary(&src, &dst).unwrap();
+        assert!(!second);
 
-    #[test]
-    fn test_copy_file_if_not_exists_skips_when_present() {
-        let tmp = TempDir::new().unwrap();
-        let src = tmp.path().join("src.txt");
-        let dst = tmp.path().join("dst.txt");
-
-        fs::write(&src, "new content").unwrap();
-        fs::write(&dst, "old content").unwrap();
-
-        let copied = copy_file_if_not_exists(&src, &dst).unwrap();
-        assert!(!copied);
-        assert_eq!(fs::read_to_string(&dst).unwrap(), "old content");
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "binary v1");
     }
 }

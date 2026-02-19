@@ -1,8 +1,8 @@
 # EasyClaw
 
-OpenClaw 桌面客户端 — 零配置、开箱即用。
+ZeroClaw 桌面客户端 — 零配置、开箱即用。
 
-用户安装后双击打开即可使用 OpenClaw 全部功能，无需任何命令行操作或手动配置。
+用户安装后双击打开即可使用 ZeroClaw 全部功能，无需任何命令行操作或手动配置。
 
 ## 技术栈
 
@@ -17,14 +17,15 @@ OpenClaw 桌面客户端 — 零配置、开箱即用。
 | 后端 | Rust |
 | 后端测试 | cargo test + tempfile |
 | 包管理器 | Yarn |
+| Gateway | ZeroClaw 0.1.0（二进制内嵌） |
 
 ## 核心特性
 
-- **零配置启动**: 内置预设配置，首次启动自动完成初始化
-- **自动 Gateway 管理**: 自动启动和管理 OpenClaw Gateway 服务
-- **幂等初始化**: 安全的重复初始化，不覆盖用户已修改的文件
+- **零配置启动**: 内嵌 ZeroClaw 二进制，首次启动自动调用 `zeroclaw onboard` 完成初始化
+- **自动 Gateway 管理**: 通过 `zeroclaw service install/start/status` 管理后台服务
+- **幂等初始化**: 安全的重复初始化，已有 config.toml 时自动跳过 onboard
 - **优雅降级**: Gateway 启动失败不阻塞主界面使用
-- **预装技能包**: 内置滴答清单、Obsidian、摘要等技能包
+- **用户可定制**: 配置和模板文件由 ZeroClaw 生成在 `~/.zeroclaw/`，可直接修改
 
 ## 项目结构
 
@@ -42,15 +43,14 @@ EasyClaw/
 ├── src-tauri/                  # Rust 后端
 │   ├── src/
 │   │   ├── commands/
-│   │   │   ├── init.rs         # 初始化命令 (check/initialize)
-│   │   │   └── gateway.rs      # Gateway 管理命令
+│   │   │   ├── init.rs         # 初始化命令 (安装二进制 + zeroclaw onboard)
+│   │   │   └── gateway.rs      # Gateway 管理 (service install/start/status)
 │   │   └── utils/
-│   │       ├── fs.rs           # 递归目录复制
+│   │       ├── fs.rs           # 二进制安装工具
 │   │       └── paths.rs        # 路径工具
-│   └── resources/              # 预置资源文件
-│       ├── openclaw.json       # 主配置
-│       ├── MEMORY.md / USER.md / SOUL.md
-│       └── skills/             # 预装技能包
+│   └── resources/
+│       └── bin/
+│           └── zeroclaw        # ZeroClaw 二进制 (Mach-O arm64, ~16.5MB)
 ├── tests/                      # 前端测试
 │   ├── components/
 │   │   ├── SplashScreen.spec.ts
@@ -116,16 +116,30 @@ yarn tauri build
 ```
 应用启动
   ↓
-检查 ~/.openclaw/openclaw.json 是否存在
+检查 ~/.zeroclaw/config.toml 是否存在
   ├── 存在 → 直接进入主界面
   └── 不存在 → 执行初始化:
-        1. 创建 ~/.openclaw/workspace/
-        2. 复制 openclaw.json → ~/.openclaw/
-        3. 复制模板文件 → workspace/
-        4. 复制技能包 → workspace/skills/
-        5. 启动 Gateway (失败不阻塞)
+        1. 安装二进制: resources/bin/zeroclaw → ~/.zeroclaw/bin/zeroclaw
+        2. 运行 zeroclaw onboard (生成 config.toml + workspace 全套文件)
+        3. 启动 Gateway: service install → service start (失败不阻塞)
         ↓
       进入主界面
+```
+
+### 用户目录结构（由 zeroclaw onboard 生成）
+
+```
+~/.zeroclaw/
+├── bin/
+│   └── zeroclaw           # 二进制
+├── config.toml            # 主配置 (chmod 600)
+└── workspace/
+    ├── MEMORY.md           # 长期记忆
+    ├── USER.md             # 用户信息
+    ├── SOUL.md             # AI 人格
+    ├── sessions/           # 会话记录
+    ├── memory/             # 记忆存储
+    └── skills/             # 技能包
 ```
 
 ## License

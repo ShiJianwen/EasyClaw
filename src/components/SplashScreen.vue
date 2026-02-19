@@ -96,7 +96,7 @@ defineEmits<{ retry: [] }>();
 
       <!-- Brand name -->
       <h1 class="text-3xl font-bold gradient-text mb-2">EasyClaw</h1>
-      <p class="text-text-muted text-sm mb-10">OpenClaw 智能助手客户端</p>
+      <p class="text-text-muted text-sm mb-10">ZeroClaw 智能助手客户端</p>
 
       <!-- Progress section (shown when not error) -->
       <div v-if="status !== 'error'" class="w-80 flex flex-col items-center">

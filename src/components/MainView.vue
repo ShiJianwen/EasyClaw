@@ -175,7 +175,7 @@ onMounted(async () => {
           :class="gatewayConnected ? 'bg-success' : 'bg-danger'"
         />
         <span class="text-text-muted">
-          Gateway {{ gatewayConnected ? '已连接' : '未连接' }}
+          ZeroClaw {{ gatewayConnected ? '已连接' : '未连接' }}
         </span>
       </div>
       <span class="text-text-muted">v0.1.0</span>

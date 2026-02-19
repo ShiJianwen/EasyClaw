@@ -51,7 +51,7 @@ export function useInitialization() {
       error: null,
     };
 
-    const initResult = await invoke<string>("initialize_openclaw").catch(
+    const initResult = await invoke<string>("initialize_zeroclaw").catch(
       (err) => {
         state.value = {
           status: "error",

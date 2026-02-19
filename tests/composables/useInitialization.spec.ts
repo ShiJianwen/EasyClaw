@@ -36,14 +36,14 @@ describe("useInitialization", () => {
   it("should run initialization if not yet initialized", async () => {
     mockedInvoke
       .mockResolvedValueOnce(false) // check_initialized returns false
-      .mockResolvedValueOnce("OK") // initialize_openclaw
+      .mockResolvedValueOnce("OK") // initialize_zeroclaw
       .mockResolvedValueOnce("OK"); // start_gateway
 
     const { state, checkAndInitialize } = useInitialization();
     await checkAndInitialize();
 
     expect(mockedInvoke).toHaveBeenCalledWith("check_initialized");
-    expect(mockedInvoke).toHaveBeenCalledWith("initialize_openclaw");
+    expect(mockedInvoke).toHaveBeenCalledWith("initialize_zeroclaw");
     expect(mockedInvoke).toHaveBeenCalledWith("start_gateway");
     expect(state.value.status).toBe("success");
     expect(state.value.progress).toBe(100);
@@ -52,7 +52,7 @@ describe("useInitialization", () => {
   it("should handle initialization error", async () => {
     mockedInvoke
       .mockResolvedValueOnce(false) // check_initialized
-      .mockRejectedValueOnce("Init failed"); // initialize_openclaw
+      .mockRejectedValueOnce("Init failed"); // initialize_zeroclaw
 
     const { state, checkAndInitialize } = useInitialization();
     await checkAndInitialize();
@@ -64,7 +64,7 @@ describe("useInitialization", () => {
   it("should handle gateway failure gracefully (not block success)", async () => {
     mockedInvoke
       .mockResolvedValueOnce(false) // check_initialized
-      .mockResolvedValueOnce("OK") // initialize_openclaw
+      .mockResolvedValueOnce("OK") // initialize_zeroclaw
       .mockRejectedValueOnce("Gateway failed"); // start_gateway fails
 
     const { state, checkAndInitialize } = useInitialization();

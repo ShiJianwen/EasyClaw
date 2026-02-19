@@ -10,7 +10,7 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             init::check_initialized,
-            init::initialize_openclaw,
+            init::initialize_zeroclaw,
             gateway::gateway_status,
             gateway::start_gateway,
         ])
