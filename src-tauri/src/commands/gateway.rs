@@ -34,7 +34,8 @@ fn resolve_zeroclaw_bin() -> Option<PathBuf> {
     None
 }
 
-/// Checks if the ZeroClaw server is running by querying its status.
+/// Checks if the ZeroClaw daemon service is running by querying `zeroclaw service status`.
+/// Returns true if the service is loaded/running (exit code 0), false otherwise.
 #[tauri::command]
 pub async fn gateway_status() -> Result<bool, String> {
     let bin_path = match resolve_zeroclaw_bin() {
@@ -52,7 +53,7 @@ pub async fn gateway_status() -> Result<bool, String> {
         .output()
         .map_err(|e| {
             error!("[gateway_status] Failed to execute command: {}", e);
-            format!("Failed to check server status: {}", e)
+            format!("Failed to check gateway status: {}", e)
         })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -66,7 +67,9 @@ pub async fn gateway_status() -> Result<bool, String> {
     Ok(output.status.success())
 }
 
-/// Attempts to start the ZeroClaw server in background mode.
+/// Attempts to start the ZeroClaw daemon via OS service management.
+/// Runs `zeroclaw service install` (idempotent, registers launchd/systemd unit)
+/// then `zeroclaw service start` to ensure the daemon is running.
 /// Returns Ok with a message on success, or Ok with warning if binary not found.
 #[tauri::command]
 pub async fn start_gateway() -> Result<String, String> {
@@ -78,9 +81,9 @@ pub async fn start_gateway() -> Result<String, String> {
         }
     };
 
-    info!("[start_gateway] Starting server with {:?}", bin_path);
+    // Step 1: Install service unit (idempotent)
+    info!("[start_gateway] Installing service with {:?}", bin_path);
 
-    // Ensure service is installed (idempotent), then start
     let install_output = Command::new(&bin_path)
         .args(["service", "install"])
         .output()
@@ -89,21 +92,45 @@ pub async fn start_gateway() -> Result<String, String> {
             format!("Failed to install service: {}", e)
         })?;
 
-    info!("[start_gateway] service install exit={:?} stdout={} stderr={}",
-        install_output.status.code(),
-        String::from_utf8_lossy(&install_output.stdout),
-        String::from_utf8_lossy(&install_output.stderr));
+    let stdout = String::from_utf8_lossy(&install_output.stdout);
+    let stderr = String::from_utf8_lossy(&install_output.stderr);
+    info!("[start_gateway] service install exit code: {:?}", install_output.status.code());
+    info!("[start_gateway] service install stdout: {}", stdout);
+    if !stderr.is_empty() {
+        warn!("[start_gateway] service install stderr: {}", stderr);
+    }
 
-    Command::new(&bin_path)
+    if !install_output.status.success() {
+        return Err(format!("Failed to install service (exit {}): {}",
+            install_output.status.code().unwrap_or(-1), stderr));
+    }
+
+    // Step 2: Start the service
+    info!("[start_gateway] Starting service with {:?}", bin_path);
+
+    let start_output = Command::new(&bin_path)
         .args(["service", "start"])
-        .spawn()
+        .output()
         .map_err(|e| {
-            error!("[start_gateway] Failed to start server: {}", e);
-            format!("Failed to start server: {}", e)
+            error!("[start_gateway] Failed to start service: {}", e);
+            format!("Failed to start service: {}", e)
         })?;
 
-    info!("[start_gateway] ZeroClaw server started successfully");
-    Ok("ZeroClaw server started successfully".to_string())
+    let stdout = String::from_utf8_lossy(&start_output.stdout);
+    let stderr = String::from_utf8_lossy(&start_output.stderr);
+    info!("[start_gateway] service start exit code: {:?}", start_output.status.code());
+    info!("[start_gateway] service start stdout: {}", stdout);
+    if !stderr.is_empty() {
+        warn!("[start_gateway] service start stderr: {}", stderr);
+    }
+
+    if !start_output.status.success() {
+        return Err(format!("Failed to start service (exit {}): {}",
+            start_output.status.code().unwrap_or(-1), stderr));
+    }
+
+    info!("[start_gateway] ZeroClaw daemon service started successfully");
+    Ok("ZeroClaw daemon service started successfully".to_string())
 }
 
 #[cfg(test)]

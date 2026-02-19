@@ -10,6 +10,7 @@ ZeroClaw 桌面客户端 — 零配置、开箱即用。
 |------|------|
 | 桌面框架 | Tauri v2 |
 | 前端 | Vue 3 + TypeScript |
+| 路由 | Vue Router 4 (Hash Mode) |
 | 构建工具 | Vite 5 |
 | 样式 | Tailwind CSS 3.4 |
 | 图标 | lucide-vue-next |
@@ -21,6 +22,7 @@ ZeroClaw 桌面客户端 — 零配置、开箱即用。
 
 ## 核心特性
 
+- **对话助手**: 与 AI 助手自然对话，通过 SSE 流式通信实时显示回复
 - **零配置启动**: 内嵌 ZeroClaw 二进制，首次启动自动调用 `zeroclaw onboard` 完成初始化
 - **自动 Gateway 管理**: 通过 `zeroclaw service install/start/status` 管理后台服务
 - **幂等初始化**: 安全的重复初始化，已有 config.toml 时自动跳过 onboard
@@ -32,14 +34,19 @@ ZeroClaw 桌面客户端 — 零配置、开箱即用。
 ```
 EasyClaw/
 ├── src/                        # Vue 前端源码
-│   ├── App.vue                 # 根组件 (Splash ↔ Main 切换)
+│   ├── App.vue                 # 根组件 (Splash ↔ AppLayout 切换)
+│   ├── router/
+│   │   └── index.ts            # 路由配置 (Hash Mode: / → HomePage, /chat → ChatView)
 │   ├── components/
 │   │   ├── SplashScreen.vue    # 启动初始化页
-│   │   └── MainView.vue        # 主界面
+│   │   ├── AppLayout.vue       # 全局布局壳 (导航栏 + router-view + 状态栏)
+│   │   ├── HomePage.vue        # 首页 (欢迎横幅 + 功能卡片导航)
+│   │   └── ChatView.vue        # 对话助手页 (消息列表 + 输入框 + SSE 流式)
 │   ├── composables/
-│   │   └── useInitialization.ts # 初始化逻辑
+│   │   ├── useInitialization.ts # 初始化逻辑
+│   │   └── useChat.ts          # 对话逻辑 (SSE 流式通信 + AbortController)
 │   └── styles/
-│       └── main.css            # Tailwind + 全局样式
+│       └── main.css            # Tailwind + 全局样式 + chat 气泡样式
 ├── src-tauri/                  # Rust 后端
 │   ├── src/
 │   │   ├── commands/
@@ -54,9 +61,12 @@ EasyClaw/
 ├── tests/                      # 前端测试
 │   ├── components/
 │   │   ├── SplashScreen.spec.ts
-│   │   └── MainView.spec.ts
+│   │   ├── AppLayout.spec.ts
+│   │   ├── HomePage.spec.ts
+│   │   └── ChatView.spec.ts
 │   └── composables/
-│       └── useInitialization.spec.ts
+│       ├── useInitialization.spec.ts
+│       └── useChat.spec.ts
 └── package.json
 ```
 

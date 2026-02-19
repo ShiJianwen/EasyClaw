@@ -7,6 +7,9 @@ use tauri::Manager;
 use crate::utils::fs::install_binary;
 use crate::utils::paths;
 
+/// The gateway port EasyClaw expects. Must match GATEWAY_URL in useChat.ts.
+const GATEWAY_PORT: u16 = 18789;
+
 /// Checks whether ZeroClaw has been initialized by verifying
 /// the existence of ~/.zeroclaw/config.toml.
 #[tauri::command]
@@ -27,7 +30,7 @@ fn run_zeroclaw_onboard(bin_path: &Path, zeroclaw_dir: &Path) -> Result<(), Stri
     info!("[run_zeroclaw_onboard] Running zeroclaw onboard to generate config and workspace");
 
     let output = Command::new(bin_path)
-        .args(["onboard", "--provider", "bailian", "--model", "qwen3-max-2026-01-23", "--memory", "sqlite"])
+        .args(["onboard"])
         .output()
         .map_err(|e| {
             error!("[run_zeroclaw_onboard] Failed to execute onboard: {}", e);
@@ -61,6 +64,74 @@ fn run_zeroclaw_onboard(bin_path: &Path, zeroclaw_dir: &Path) -> Result<(), Stri
         }
     }
 
+    // Patch gateway config for EasyClaw (port + disable pairing)
+    patch_gateway_config(&config_path)?;
+
+    Ok(())
+}
+
+/// Patches the [gateway] section in config.toml:
+/// - Sets port to GATEWAY_PORT (EasyClaw's expected port)
+/// - Disables require_pairing (local client doesn't need pairing tokens)
+fn patch_gateway_config(config_path: &Path) -> Result<(), String> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(config_path).map_err(|e| {
+        format!("Failed to read config.toml: {}", e)
+    })?;
+
+    let mut patched = content.clone();
+
+    // Patch port: replace default 3000 with GATEWAY_PORT
+    patched = patched.replace(
+        "port = 3000",
+        &format!("port = {}", GATEWAY_PORT),
+    );
+
+    // Patch require_pairing: disable for local client
+    patched = patched.replace(
+        "require_pairing = true",
+        "require_pairing = false",
+    );
+
+    if patched != content {
+        fs::write(config_path, &patched).map_err(|e| {
+            format!("Failed to write config.toml: {}", e)
+        })?;
+        info!("[patch_gateway_config] Patched gateway config (port={}, require_pairing=false)", GATEWAY_PORT);
+    } else {
+        // Values might already be non-default but wrong; do a line-by-line patch in [gateway] section
+        let mut lines: Vec<String> = content.lines().map(String::from).collect();
+        let mut in_gateway = false;
+        let mut changed = false;
+        for line in &mut lines {
+            let trimmed = line.trim().to_string();
+            if trimmed == "[gateway]" {
+                in_gateway = true;
+                continue;
+            }
+            if in_gateway && trimmed.starts_with('[') {
+                break;
+            }
+            if in_gateway && trimmed.starts_with("port =") && !trimmed.contains(&format!("{}", GATEWAY_PORT)) {
+                *line = format!("port = {}", GATEWAY_PORT);
+                changed = true;
+            } else if in_gateway && trimmed.starts_with("require_pairing =") && trimmed.contains("true") {
+                *line = line.replace("true", "false");
+                changed = true;
+            }
+        }
+        if changed {
+            let new_content = lines.join("\n") + "\n";
+            fs::write(config_path, &new_content).map_err(|e| {
+                format!("Failed to write config.toml: {}", e)
+            })?;
+            info!("[patch_gateway_config] Patched gateway config (port={}, require_pairing=false)", GATEWAY_PORT);
+        }
+    }
+
     Ok(())
 }
 
@@ -91,6 +162,10 @@ pub async fn initialize_zeroclaw(app: tauri::AppHandle) -> Result<String, String
         run_zeroclaw_onboard(&bin_dst, &zeroclaw_dir)?;
     }
 
+    // Step 3: Ensure gateway config matches EasyClaw's expectations (even if onboard was skipped)
+    let config_path = paths::config_file_path()?;
+    patch_gateway_config(&config_path)?;
+
     Ok("ZeroClaw initialization completed successfully".to_string())
 }
 
@@ -111,6 +186,10 @@ pub fn initialize_from_resource_dir(
         run_zeroclaw_onboard(&bin_dst, zeroclaw_dir)?;
     }
 
+    // Ensure gateway config matches EasyClaw's expectations
+    let config_path = zeroclaw_dir.join("config.toml");
+    patch_gateway_config(&config_path)?;
+
     Ok("ZeroClaw initialization completed successfully".to_string())
 }
 
@@ -120,7 +199,7 @@ mod tests {
     use tempfile::TempDir;
 
     /// Creates a mock zeroclaw binary that simulates `onboard`:
-    /// generates config.toml and workspace structure.
+    /// generates config.toml (with default gateway port 3000) and workspace structure.
     fn create_mock_binary(dir: &Path, zeroclaw_dir: &Path) {
         fs::create_dir_all(dir.join("bin")).unwrap();
         let script = format!(
@@ -130,11 +209,13 @@ mkdir -p "{zd}/workspace/sessions"
 mkdir -p "{zd}/workspace/memory"
 mkdir -p "{zd}/workspace/skills"
 cat > "{zd}/config.toml" << 'EOF'
-default_provider = "bailian"
-default_model = "qwen3-max-2026-01-23"
 [memory]
-backend = "sqlite"
 auto_save = true
+
+[gateway]
+port = 3000
+host = "127.0.0.1"
+require_pairing = true
 EOF
 echo "# Memory" > "{zd}/workspace/MEMORY.md"
 echo "# User" > "{zd}/workspace/USER.md"
@@ -169,6 +250,14 @@ echo "# Soul" > "{zd}/workspace/SOUL.md"
         assert!(zeroclaw_dir.join("config.toml").exists());
         let config = fs::read_to_string(zeroclaw_dir.join("config.toml")).unwrap();
         assert!(config.contains("auto_save"));
+
+        // Verify gateway port patched to GATEWAY_PORT
+        assert!(config.contains(&format!("port = {}", GATEWAY_PORT)));
+        assert!(!config.contains("port = 3000"));
+
+        // Verify require_pairing disabled
+        assert!(config.contains("require_pairing = false"));
+        assert!(!config.contains("require_pairing = true"));
 
         // Verify workspace files created by onboard
         assert!(zeroclaw_dir.join("workspace/MEMORY.md").exists());
@@ -219,5 +308,43 @@ echo "# Soul" > "{zd}/workspace/SOUL.md"
         let result = initialize_from_resource_dir(resource_dir.path(), &zeroclaw_dir);
         assert!(result.is_ok());
         assert!(!zeroclaw_dir.join("config.toml").exists());
+    }
+
+    #[test]
+    fn test_patch_gateway_config_updates_defaults() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        fs::write(&config_path, "[gateway]\nport = 3000\nhost = \"127.0.0.1\"\nrequire_pairing = true\n").unwrap();
+
+        patch_gateway_config(&config_path).unwrap();
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains(&format!("port = {}", GATEWAY_PORT)));
+        assert!(!content.contains("port = 3000"));
+        assert!(content.contains("require_pairing = false"));
+        assert!(!content.contains("require_pairing = true"));
+    }
+
+    #[test]
+    fn test_patch_gateway_config_preserves_correct_values() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let original = format!("[gateway]\nport = {}\nhost = \"127.0.0.1\"\nrequire_pairing = false\n", GATEWAY_PORT);
+        fs::write(&config_path, &original).unwrap();
+
+        patch_gateway_config(&config_path).unwrap();
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains(&format!("port = {}", GATEWAY_PORT)));
+        assert!(content.contains("require_pairing = false"));
+    }
+
+    #[test]
+    fn test_patch_gateway_config_noop_on_missing_file() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("nonexistent.toml");
+
+        let result = patch_gateway_config(&config_path);
+        assert!(result.is_ok());
     }
 }

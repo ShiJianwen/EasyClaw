@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import SplashScreen from "./components/SplashScreen.vue";
-import MainView from "./components/MainView.vue";
+import AppLayout from "./components/AppLayout.vue";
 import { useInitialization } from "./composables/useInitialization";
 
 const { state, checkAndInitialize, retry } = useInitialization();
@@ -14,7 +14,7 @@ onMounted(() => {
 <template>
   <div class="w-screen h-screen bg-dark-900">
     <Transition name="fade" mode="out-in">
-      <MainView
+      <AppLayout
         v-if="state.status === 'success'"
         key="main"
       />
