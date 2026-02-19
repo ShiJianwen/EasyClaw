@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 24% 6%;
+    --foreground: 210 40% 98%;
+    --card: 240 20% 10%;
+    --card-foreground: 210 40% 98%;
+    --primary: 239 84% 67%;
+    --primary-light: 258 80% 66%;
+    --primary-lighter: 262 83% 74%;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.4);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl;
+  }
+
+  .glass-nav {
+    @apply bg-dark-900/80 backdrop-blur-xl border-b border-white/5;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary to-primary-lighter bg-clip-text text-transparent;
+  }
+
+  .glow-border {
+    @apply border border-primary/20 shadow-[0_0_15px_rgba(99,102,241,0.15)];
+  }
+}
+
+@layer utilities {
+  .transition-base {
+    @apply transition-all duration-300 ease-in-out;
+  }
+}
